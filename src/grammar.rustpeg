@@ -1,0 +1,71 @@
+use super::{Qual, Term, PreType, Type};
+
+qual -> Qual
+  = UN { Qual::Unlinear }
+  / LIN { Qual::Linear }
+
+pub term -> Term
+  = IF cond:term THEN then:term ELSE el:term {
+      Term::If(box cond, box then, box el)
+  }
+  / LET lhs:identifier COMMA rhs:identifier EQUAL t1:term IN t2:term {
+      Term::Split(lhs, rhs, box t1, box t2)
+  }
+  / #infix<primary_term> {
+    #L l __ r { Term::App(box l, box r) }
+  }
+
+pub primary_term -> Term
+  = q:qual TRUE { Term::Bool(q, true) }
+  / q:qual FALSE { Term::Bool(q, false) }
+  / q:qual LEFT_PAREN t1:term COMMA t2:term RIGHT_PAREN {
+      Term::Pair(q, box t1, box t2)
+  }
+  / q:qual FUNC arg:identifier COLON ty:typ FAT_ARROW body:term {
+      Term::Lam(q, arg, ty, box body)
+  }
+  / LEFT_PAREN t:term RIGHT_PAREN { t }
+  / name:identifier { Term::Var(name) }
+
+
+pretype -> PreType
+  = BOOL { PreType::Bool }
+  / LEFT_PAREN ty1:typ COMMA ty2:typ RIGHT_PAREN {
+      PreType::Pair(box ty1, box ty2)
+  }
+  / ty1:typ ARROW ty2:typ {
+      PreType::Arrow(box ty1, box ty2)
+  }
+
+typ -> Type
+  = q:qual prety:pretype {
+      (q, prety)
+  }
+
+identifier -> String
+  = s:$([a-zA-Z_][a-zA-Z0-9_]*) __ { s.to_string() }
+
+__ = [ \n\t]*
+
+LEFT_PAREN = "(" __
+RIGHT_PAREN = ")" __
+COMMA = "," __
+COLON = ":" __
+ARROW = "->" __
+FAT_ARROW = "=>" __
+EQUAL = "=" __
+AT = "@" __
+
+keyword<E> = E !([a-zA-Z0-9_]) __
+UN = keyword<"un">
+LIN = keyword<"lin">
+LET = keyword<"let">
+IN = keyword<"in">
+IF = keyword<"if">
+THEN = keyword<"then">
+ELSE = keyword<"else">
+FUNC = keyword<"func">
+BOOL = keyword<"Bool">
+TRUE = keyword<"true">
+FALSE = keyword<"false">
+
