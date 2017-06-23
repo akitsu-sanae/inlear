@@ -37,7 +37,7 @@ pretype -> PreType
       PreType::Arrow(box ty1, box ty2)
   }
 
-typ -> Type
+pub typ -> Type
   = q:qual prety:pretype {
       (q, prety)
   }

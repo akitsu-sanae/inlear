@@ -85,11 +85,34 @@ fn main() {
     loop {
         use std::io::Write;
 
-        print!("> ");
-        std::io::stdout().flush().unwrap();
         let mut input = String::new();
+
+        print!("term> ");
+        std::io::stdout().flush().unwrap();
         std::io::stdin().read_line(&mut input).unwrap();
-        println!("{:?}", parse::term(&input));
+        let term = parse::term(&input);
+        println!("{:?}", term);
+        let term = match term {
+            Ok(term) => term,
+            Err(_) => continue,
+        };
+
+        print!("type> ");
+        std::io::stdout().flush().unwrap();
+        input.clear();
+        std::io::stdin().read_line(&mut input).unwrap();
+        let typ = parse::typ(&input);
+        println!("{:?}", typ);
+        let typ = match typ {
+            Ok(ty) => ty,
+            Err(_) => continue,
+        };
+
+        if let Err(err) = type_check(&term, &typ, &Context::new()) {
+            println!("type error: {:?}", err);
+        } else {
+            println!("OK!!");
+        }
     }
 }
 
