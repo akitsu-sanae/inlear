@@ -109,7 +109,27 @@ fn type_check(t: &Term, context: &Context) -> Result<(Type, Context), TypeError>
                 Err(TypeError::Others(format!("{:?} is not pair", t)))
             }
         },
-        _ => Err(TypeError::Unimplemented)
+        Lam(ref q, ref arg, ref arg_ty, box ref body) => {
+            let mut context = context.clone();
+            context.insert(arg.clone(), arg_ty.clone());
+            let (ret_ty, mut context) = type_check(body, &context)?;
+            context.remove(arg);
+            let ty = (q.clone(), PreType::Arrow(box arg_ty.clone(), box ret_ty));
+            Ok((ty, context))
+        },
+        App(box ref t1, box ref t2) => {
+            let (t1_ty, context) = type_check(t1, context)?;
+            if let (_, PreType::Arrow(box arg_ty, box ret_ty)) = t1_ty {
+                let (t2_ty, context) = type_check(t2, &context)?;
+                if t2_ty == arg_ty {
+                    Ok((ret_ty, context))
+                } else {
+                    Err(TypeError::Others(format!("not match: {:?} and {:?}", t2_ty, arg_ty)))
+                }
+            } else {
+                Err(TypeError::Others(format!("apply for non functional term: {:?}", t1_ty)))
+            }
+        }
     }
 }
 
