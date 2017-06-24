@@ -12,7 +12,7 @@ pub term -> Term
       Term::Split(lhs, rhs, box t1, box t2)
   }
   / #infix<primary_term> {
-    #L l __ r { Term::App(box l, box r) }
+    #L l AT r { Term::App(box l, box r) }
   }
 
 pub primary_term -> Term

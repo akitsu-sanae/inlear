@@ -138,3 +138,28 @@ fn main() {
     }
 }
 
+#[test]
+fn if_test() {
+    let term = parse::term("if lin true then un true else un false").unwrap();
+    assert_eq!(term, Term::If(
+            box Term::Bool(Qual::Linear, true),
+            box Term::Bool(Qual::Unlinear, true),
+            box Term::Bool(Qual::Unlinear, false)));
+    let (ty, _) = type_check(&term, &Context::new()).unwrap();
+    assert_eq!(ty, (Qual::Unlinear, PreType::Bool));
+}
+
+#[test]
+fn split_test() {
+    let term = parse::term("let left, right = lin (lin true, un false) in left").unwrap();
+    assert_eq!(term, Term::Split(
+            "left".to_string(), "right".to_string(),
+            box Term::Pair(
+                Qual::Linear,
+                box Term::Bool(Qual::Linear, true),
+                box Term::Bool(Qual::Unlinear, false)),
+            box Term::Var("left".to_string())));
+    let (ty, _) = type_check(&term, &Context::new()).unwrap();
+    assert_eq!(ty, (Qual::Linear, PreType::Bool));
+}
+
