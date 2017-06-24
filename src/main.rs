@@ -93,11 +93,25 @@ type Context = HashMap<String, Type>;
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum TypeError {
     UnboundVariable(String),
-    VariableType(String, Type, Type),
-    Unmatch(Type, Type),
+    IfBranch(Type, Type),
+    Expected(Term, Type, Type),
+    QualCondition(Type),
+    SplitForNonPair(Term),
+    ApplyForNonFunction(Term),
+}
 
-    Others(String),
-    Unimplemented
+impl fmt::Display for TypeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use TypeError::*;
+        match *self {
+            UnboundVariable(ref name) => write!(f, "unbound variable: {}", name),
+            IfBranch(ref ty1, ref ty2) => write!(f, "then branch and else branch return different type: {} and {}", ty1, ty2),
+            Expected(ref t, ref ty1, ref ty2) => write!(f, "the type of  {} is {}, but expected {}", t, ty1, ty2),
+            QualCondition(ref ty) => write!(f, "unlinear term can not have linear term: {}", ty),
+            SplitForNonPair(ref t) => write!(f, "split non pair term: {}", t),
+            ApplyForNonFunction(ref t) => write!(f, "apply for non functional term: {}", t),
+        }
+    }
 }
 
 fn type_check(t: &Term, context: &Context) -> Result<(Type, Context), TypeError> {
@@ -127,20 +141,24 @@ fn type_check(t: &Term, context: &Context) -> Result<(Type, Context), TypeError>
                 if then_ty == else_ty {
                     Ok((then_ty, context))
                 } else {
-                    Err(TypeError::Others(format!("ifのthen節とelse節で返値型が違う")))
+                    Err(TypeError::IfBranch(then_ty, else_ty))
                 }
             } else {
-                Err(TypeError::Others(format!("could not convert {} to Boolean", cond_ty)))
+                Err(TypeError::Expected(cond.clone(), cond_ty, Type(Qual::Linear, PreType::Bool)))
             }
         },
         Pair(ref q, box ref t1, box ref t2) => {
             let (ty1, context) = type_check(t1, context)?;
             let (ty2, context) = type_check(t2, &context)?;
-            if q.check(&ty1) && q.check(&ty2) {
+            let ty1_qcond = q.check(&ty1);
+            let ty2_qcond = q.check(&ty2);
+            if ty1_qcond && ty2_qcond {
                 let ty = Type(q.clone(), PreType::Pair(box ty1, box ty2));
                 Ok((ty, context))
+            } else if ty1_qcond {
+                Err(TypeError::QualCondition(ty1.clone()))
             } else {
-                Err(TypeError::Others(format!("not satisfy qualitifier condition: {}({}, {})", q, ty1, ty2)))
+                Err(TypeError::QualCondition(ty1.clone()))
             }
         },
         Split(ref left, ref right, box ref t, box ref body) => {
@@ -154,7 +172,7 @@ fn type_check(t: &Term, context: &Context) -> Result<(Type, Context), TypeError>
                 context.remove(right);
                 Ok((ty, context))
             } else {
-                Err(TypeError::Others(format!("{} is not pair", t)))
+                Err(TypeError::SplitForNonPair(t.clone()))
             }
         },
         Lam(ref q, ref arg, ref arg_ty, box ref body) => {
@@ -172,10 +190,10 @@ fn type_check(t: &Term, context: &Context) -> Result<(Type, Context), TypeError>
                 if t2_ty == arg_ty {
                     Ok((ret_ty, context))
                 } else {
-                    Err(TypeError::Others(format!("not match: {} and {}", t2_ty, arg_ty)))
+                    Err(TypeError::Expected(t2.clone(), arg_ty, t2_ty))
                 }
             } else {
-                Err(TypeError::Others(format!("apply for non functional term: {}", t1_ty)))
+                Err(TypeError::ApplyForNonFunction(t1.clone()))
             }
         }
     }
@@ -202,7 +220,7 @@ fn main() {
         };
         match type_check(&term, &Context::new()) {
             Ok((typ, _)) => println!("{}", typ),
-            Err(err) => println!("ERR: {:?}", err),
+            Err(err) => println!("ERR: {}", err),
         }
     }
 }
