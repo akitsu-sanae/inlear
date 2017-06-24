@@ -5,6 +5,7 @@
 #![feature(box_syntax)]
 
 use std::collections::HashMap;
+use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Qual {
@@ -15,7 +16,16 @@ pub enum Qual {
 impl Qual {
     fn check(self, ty: &Type) -> bool {
         match ty {
-            &(p, _) => !(self == Qual::Unlinear && p == Qual::Linear),
+            &Type(p, _) => !(self == Qual::Unlinear && p == Qual::Linear),
+        }
+    }
+}
+
+impl fmt::Display for Qual {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Qual::Linear => write!(f, "lin"),
+            Qual::Unlinear => write!(f, "un"),
         }
     }
 }
@@ -31,6 +41,26 @@ pub enum Term {
     App(Box<Term>, Box<Term>),
 }
 
+impl fmt::Display for Term {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Term::*;
+        match *self {
+            Var(ref name) => write!(f, "{}", name),
+            Bool(ref q, ref b) => write!(f, "{} {}", q, b),
+            If(box ref cond, box ref then, box ref else_) =>
+                write!(f, "if {} then {} else {}", cond, then, else_),
+            Pair(ref q, box ref left, box ref right) =>
+                write!(f, "{} ({}, {})", q, left, right),
+            Split(ref left, ref right, box ref t1, box ref body) =>
+                write!(f, "let {}, {} = {} in {}", left, right, t1, body),
+            Lam(ref q, ref arg, ref arg_ty, box ref body) =>
+                write!(f, "{} func {}: {} => {}", q, arg, arg_ty, body),
+            App(box ref t1, box ref t2) =>
+                write!(f, "{} @ {}", t1, t2),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum PreType {
     Bool,
@@ -38,7 +68,25 @@ pub enum PreType {
     Arrow(Box<Type>, Box<Type>),
 }
 
-pub type Type = (Qual, PreType);
+impl fmt::Display for PreType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use PreType::*;
+        match *self {
+            Bool => write!(f, "Bool"),
+            Pair(box ref ty1, box ref ty2) => write!(f, "({}, {})", ty1, ty2),
+            Arrow(box ref ty1, box ref ty2) => write!(f, "{} -> {}", ty1, ty2),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Type(Qual, PreType);
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", self.0, self.1)
+    }
+}
 
 type Context = HashMap<String, Type>;
 
@@ -59,21 +107,21 @@ fn type_check(t: &Term, context: &Context) -> Result<(Type, Context), TypeError>
             match context.get(name) {
                 Some(ty) => {
                     match *ty {
-                        (Qual::Linear, _) => {
+                        Type(Qual::Linear, _) => {
                             let mut context = context.clone();
                             context.remove(name);
                             Ok((ty.clone(), context))
                         },
-                        (Qual::Unlinear, _) => Ok((ty.clone(), context.clone()))
+                        Type(Qual::Unlinear, _) => Ok((ty.clone(), context.clone()))
                     }
                 },
                 None => Err(TypeError::UnboundVariable(name.clone())),
             }
         },
-        Bool(ref q, _) => Ok(((*q, PreType::Bool), context.clone())),
+        Bool(ref q, _) => Ok((Type(*q, PreType::Bool), context.clone())),
         If(box ref cond, box ref then, box ref else_) => {
             let (cond_ty, context) = type_check(cond, context)?;
-            if let (_, PreType::Bool) = cond_ty {
+            if let Type(_, PreType::Bool) = cond_ty {
                 let (then_ty, context) = type_check(then, &context)?;
                 let (else_ty, context) = type_check(else_, &context)?;
                 if then_ty == else_ty {
@@ -82,22 +130,22 @@ fn type_check(t: &Term, context: &Context) -> Result<(Type, Context), TypeError>
                     Err(TypeError::Others(format!("ifのthen節とelse節で返値型が違う")))
                 }
             } else {
-                Err(TypeError::Others(format!("could not convert {:?} to Boolean", cond_ty)))
+                Err(TypeError::Others(format!("could not convert {} to Boolean", cond_ty)))
             }
         },
         Pair(ref q, box ref t1, box ref t2) => {
             let (ty1, context) = type_check(t1, context)?;
             let (ty2, context) = type_check(t2, &context)?;
             if q.check(&ty1) && q.check(&ty2) {
-                let ty = (q.clone(), PreType::Pair(box ty1, box ty2));
+                let ty = Type(q.clone(), PreType::Pair(box ty1, box ty2));
                 Ok((ty, context))
             } else {
-                Err(TypeError::Others(format!("not satisfy qualitifier condition: {:?}({:?}, {:?})", q, ty1, ty2)))
+                Err(TypeError::Others(format!("not satisfy qualitifier condition: {}({}, {})", q, ty1, ty2)))
             }
         },
         Split(ref left, ref right, box ref t, box ref body) => {
             let (t_ty, context) = type_check(t, context)?;
-            if let (_, PreType::Pair(box left_ty, box right_ty)) = t_ty {
+            if let Type(_, PreType::Pair(box left_ty, box right_ty)) = t_ty {
                 let mut context = context.clone();
                 context.insert(left.clone(), left_ty);
                 context.insert(right.clone(), right_ty);
@@ -106,7 +154,7 @@ fn type_check(t: &Term, context: &Context) -> Result<(Type, Context), TypeError>
                 context.remove(right);
                 Ok((ty, context))
             } else {
-                Err(TypeError::Others(format!("{:?} is not pair", t)))
+                Err(TypeError::Others(format!("{} is not pair", t)))
             }
         },
         Lam(ref q, ref arg, ref arg_ty, box ref body) => {
@@ -114,20 +162,20 @@ fn type_check(t: &Term, context: &Context) -> Result<(Type, Context), TypeError>
             context.insert(arg.clone(), arg_ty.clone());
             let (ret_ty, mut context) = type_check(body, &context)?;
             context.remove(arg);
-            let ty = (q.clone(), PreType::Arrow(box arg_ty.clone(), box ret_ty));
+            let ty = Type(q.clone(), PreType::Arrow(box arg_ty.clone(), box ret_ty));
             Ok((ty, context))
         },
         App(box ref t1, box ref t2) => {
             let (t1_ty, context) = type_check(t1, context)?;
-            if let (_, PreType::Arrow(box arg_ty, box ret_ty)) = t1_ty {
+            if let Type(_, PreType::Arrow(box arg_ty, box ret_ty)) = t1_ty {
                 let (t2_ty, context) = type_check(t2, &context)?;
                 if t2_ty == arg_ty {
                     Ok((ret_ty, context))
                 } else {
-                    Err(TypeError::Others(format!("not match: {:?} and {:?}", t2_ty, arg_ty)))
+                    Err(TypeError::Others(format!("not match: {} and {}", t2_ty, arg_ty)))
                 }
             } else {
-                Err(TypeError::Others(format!("apply for non functional term: {:?}", t1_ty)))
+                Err(TypeError::Others(format!("apply for non functional term: {}", t1_ty)))
             }
         }
     }
@@ -145,14 +193,15 @@ fn main() {
         std::io::stdout().flush().unwrap();
         std::io::stdin().read_line(&mut input).unwrap();
         let term = parse::term(&input);
-        println!("{:?}", term);
         let term = match term {
             Ok(term) => term,
-            Err(_) => continue,
+            Err(err) => {
+                println!("{:?}", err);
+                continue;
+            },
         };
-
         match type_check(&term, &Context::new()) {
-            Ok((typ, _)) => println!("{:?}", typ),
+            Ok((typ, _)) => println!("{}", typ),
             Err(err) => println!("ERR: {:?}", err),
         }
     }

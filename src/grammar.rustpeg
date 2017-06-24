@@ -39,7 +39,7 @@ pretype -> PreType
 
 pub typ -> Type
   = q:qual prety:pretype {
-      (q, prety)
+      Type(q, prety)
   }
 
 identifier -> String
