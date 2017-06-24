@@ -95,6 +95,20 @@ fn type_check(t: &Term, context: &Context) -> Result<(Type, Context), TypeError>
                 Err(TypeError::Others(format!("not satisfy qualitifier condition: {:?}({:?}, {:?})", q, ty1, ty2)))
             }
         },
+        Split(ref left, ref right, box ref t, box ref body) => {
+            let (t_ty, context) = type_check(t, context)?;
+            if let (_, PreType::Pair(box left_ty, box right_ty)) = t_ty {
+                let mut context = context.clone();
+                context.insert(left.clone(), left_ty);
+                context.insert(right.clone(), right_ty);
+                let (ty, mut context) = type_check(body, &context)?;
+                context.remove(left);
+                context.remove(right);
+                Ok((ty, context))
+            } else {
+                Err(TypeError::Others(format!("{:?} is not pair", t)))
+            }
+        },
         _ => Err(TypeError::Unimplemented)
     }
 }
@@ -107,7 +121,7 @@ fn main() {
 
         let mut input = String::new();
 
-        print!("term> ");
+        print!("> ");
         std::io::stdout().flush().unwrap();
         std::io::stdin().read_line(&mut input).unwrap();
         let term = parse::term(&input);
