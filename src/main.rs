@@ -52,52 +52,47 @@ enum TypeError {
     Unimplemented
 }
 
-fn type_check(t: &Term, ty: &Type, context: &Context) -> Result<Context, TypeError> {
+fn type_check(t: &Term, context: &Context) -> Result<(Type, Context), TypeError> {
     use Term::*;
     match *t {
         Var(ref name) => {
             match context.get(name) {
-                Some(ty_) if ty == ty_ => {
+                Some(ty) => {
                     match *ty {
                         (Qual::Linear, _) => {
                             let mut context = context.clone();
                             context.remove(name);
-                            Ok(context)
+                            Ok((ty.clone(), context))
                         },
-                        (Qual::Unlinear, _) => Ok(context.clone())
+                        (Qual::Unlinear, _) => Ok((ty.clone(), context.clone()))
                     }
                 },
-                Some(ty_) => Err(TypeError::VariableType(name.clone(), ty.clone(), ty_.clone())),
                 None => Err(TypeError::UnboundVariable(name.clone())),
             }
         },
-        Bool(ref q, _) => {
-            if *ty == (*q, PreType::Bool) {
-                Ok(context.clone())
+        Bool(ref q, _) => Ok(((*q, PreType::Bool), context.clone())),
+        If(box ref cond, box ref then, box ref else_) => {
+            let (cond_ty, context) = type_check(cond, context)?;
+            if let (_, PreType::Bool) = cond_ty {
+                let (then_ty, context) = type_check(then, &context)?;
+                let (else_ty, context) = type_check(else_, &context)?;
+                if then_ty == else_ty {
+                    Ok((then_ty, context))
+                } else {
+                    Err(TypeError::Others(format!("ifのthen節とelse節で返値型が違う")))
+                }
             } else {
-                Err(TypeError::Unmatch(ty.clone(), (*q, PreType::Bool)))
+                Err(TypeError::Others(format!("could not convert {:?} to Boolean", cond_ty)))
             }
         },
-        If(box ref cond, box ref then, box ref else_) => {
-            let context = type_check(cond, &(Qual::Unlinear, PreType::Bool), context)?;
-            let context = type_check(then, ty, &context)?;
-            let context = type_check(else_, ty, &context)?;
-            Ok(context)
-        },
         Pair(ref q, box ref t1, box ref t2) => {
-            if let &(ref q_, PreType::Pair(box ref ty1, box ref ty2)) = ty {
-                if q != q_ {
-                    return Err(TypeError::Others(format!("not match: {:?} and {:?}", q, q_)))
-                }
-                let context = type_check(t1, ty1, context)?;
-                let context = type_check(t2, ty2, &context)?;
-                if q.check(ty1) && q.check(ty2) {
-                    Ok(context)
-                } else {
-                    Err(TypeError::Others(format!("not satisfy qualitifier condition: {:?}({:?}, {:?})", q, ty1, ty2)))
-                }
+            let (ty1, context) = type_check(t1, context)?;
+            let (ty2, context) = type_check(t2, &context)?;
+            if q.check(&ty1) && q.check(&ty2) {
+                let ty = (q.clone(), PreType::Pair(box ty1, box ty2));
+                Ok((ty, context))
             } else {
-                Err(TypeError::Others(format!("not pair: {:?}", ty)))
+                Err(TypeError::Others(format!("not satisfy qualitifier condition: {:?}({:?}, {:?})", q, ty1, ty2)))
             }
         },
         _ => Err(TypeError::Unimplemented)
@@ -122,21 +117,9 @@ fn main() {
             Err(_) => continue,
         };
 
-        print!("type> ");
-        std::io::stdout().flush().unwrap();
-        input.clear();
-        std::io::stdin().read_line(&mut input).unwrap();
-        let typ = parse::typ(&input);
-        println!("{:?}", typ);
-        let typ = match typ {
-            Ok(ty) => ty,
-            Err(_) => continue,
-        };
-
-        if let Err(err) = type_check(&term, &typ, &Context::new()) {
-            println!("type error: {:?}", err);
-        } else {
-            println!("OK!!");
+        match type_check(&term, &Context::new()) {
+            Ok((typ, _)) => println!("{:?}", typ),
+            Err(err) => println!("ERR: {:?}", err),
         }
     }
 }
